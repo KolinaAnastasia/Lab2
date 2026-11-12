@@ -1,74 +1,79 @@
--- Выбрать все книги у которых прошел срок возврата
-SELECT
-    b.Book_code,
-    b.Title,
-    b.Publication_year,
-    s.Reader_code,
-    s.Issue_date,
-    s.Duration,
-    s.Issue_date + s.Duration AS Return_Date
-FROM Books b
-JOIN Subscription s ON b.Book_code = s.Book_code
-WHERE s.Return_mark = FALSE
-  AND s.Issue_date + s.Duration < CURRENT_DATE;
+-- 1. Выбрать все книги, у которых прошёл срок возврата.
 
--- Выбрать все книги, выпущенные издательствами, в названии которых есть слово "Москва"
+SELECT DISTINCT Books.*
+FROM Books
+JOIN Subscription
+ON Books.Book_code = Subscription.Book_code
+WHERE Subscription.Return_mark = FALSE
+AND Subscription.Issue_date + Subscription.Duration < CURRENT_DATE;
+
+
+-- 2. Выбрать все книги, выпущенные издательствами, в название которых входит слово «Москва».
+
 SELECT *
 FROM Books
 WHERE Publisher ILIKE '%Москва%';
 
--- Создать таблицу, содержащую данные 1 запроса с указанием года издания
-CREATE TABLE books_return_control AS
-SELECT
-    b.Book_code,
-    b.Title,
-    b.Publication_year,
-    b.Publisher,
-    s.Reader_code,
-    s.Issue_date,
-    s.Duration,
-    s.Return_mark,
-    s.Issue_date + s.Duration AS Return_Date
-FROM Books b
-JOIN Subscription s ON b.Book_code = s.Book_code
-WHERE s.Return_mark = FALSE
-  AND s.Issue_date + s.Duration < CURRENT_DATE;
 
--- В созданной таблице для всех книг, выпущенных до 1990 года, продлить срок возврата на 2 года
+-- 3. Создать таблицу, содержащую данные 1 запроса с указанием года издания.
+
+SELECT DISTINCT ON (Books.Book_code)
+    Books.*,
+    Subscription.Issue_date,
+    Subscription.Duration,
+    Subscription.Issue_date + Subscription.Duration AS Return_Date
+INTO books_return_control
+FROM Books
+JOIN Subscription
+ON Books.Book_code = Subscription.Book_code
+WHERE Subscription.Return_mark = FALSE
+AND Subscription.Issue_date + Subscription.Duration < CURRENT_DATE
+ORDER BY Books.Book_code;
+
+
+-- 4. Добавить в созданную таблицу книги, у которых до конца срока возврата остался ещё месяц.
+
 INSERT INTO books_return_control
-SELECT
-    b.Book_code,
-    b.Title,
-    b.Publication_year,
-    b.Publisher,
-    s.Reader_code,
-    s.Issue_date,
-    s.Duration,
-    s.Return_mark,
-    s.Issue_date + s.Duration AS Return_Date
-FROM Books b
-JOIN Subscription s ON b.Book_code = s.Book_code
-WHERE s.Return_mark = FALSE
-  AND s.Issue_date + s.Duration BETWEEN CURRENT_DATE
-                                    AND CURRENT_DATE + 30
-  AND NOT EXISTS (
-      SELECT 1
-      FROM books_return_control c
-      WHERE c.Book_code = b.Book_code
-        AND c.Reader_code = s.Reader_code
-        AND c.Issue_date = s.Issue_date
-  );
+SELECT DISTINCT ON (Books.Book_code)
+    Books.*,
+    Subscription.Issue_date,
+    Subscription.Duration,
+    Subscription.Issue_date + Subscription.Duration AS Return_Date
+FROM Books
+JOIN Subscription
+ON Books.Book_code = Subscription.Book_code
+WHERE Subscription.Return_mark = FALSE
+AND Subscription.Issue_date + Subscription.Duration
+    BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+AND NOT EXISTS (
+    SELECT 1
+    FROM books_return_control
+    WHERE books_return_control.Book_code = Books.Book_code
+)
+ORDER BY Books.Book_code;
 
---  Удалить из созданной таблицы записи для всех книг, названия которых начинаются и заканчиваются на одну букву
+
+-- 5. В созданной таблице для всех книг, выпущенных до 1990 года, продлить срок возврата на 2 года.
+
+UPDATE books_return_control
+SET Return_Date = (Return_Date + INTERVAL '2 years')::DATE
+WHERE Publication_year < 1990;
+
+
+-- 6. Удалить из созданной таблицы записи для всех книг, названия которых начинаются и заканчиваются на одну букву.
+
 DELETE FROM books_return_control
-WHERE LOWER (LEFT(Title,1)) = LOWER(RIGHT(Title,1));
+WHERE LOWER(LEFT(Title, 1)) = LOWER(RIGHT(Title, 1));
 
--- Посчитать сколько раз была выдана каждая из книг, хранящаяся в библиотеке
+
+-- 7. Посчитать, сколько раз была выдана каждая из книг, хранящихся в библиотеке.
+
 SELECT
-    b.Book_code,
-    b.Title,
-    COUNT(s.Book_code) AS Issue_Count
-FROM Books b
-LEFT JOIN Subscription s ON b.Book_code = s.Book_code
-GROUP BY b.Book_code, b.Title
-ORDER BY b.Book_code;
+    Books.Book_code,
+    Books.Title,
+    COUNT(Subscription.Book_code) AS Issue_Count
+FROM Books
+LEFT JOIN Subscription
+ON Books.Book_code = Subscription.Book_code
+GROUP BY Books.Book_code, Books.Title
+ORDER BY Books.Book_code;
