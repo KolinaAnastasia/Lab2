@@ -17,46 +17,42 @@ WHERE Publisher ILIKE '%Москва%';
 
 -- 3. Создать таблицу, содержащую данные 1 запроса с указанием года издания
 
-SELECT DISTINCT ON (Books.Book_code)
-    Books.*,
-    Subscription.Issue_date,
-    Subscription.Duration,
-    Subscription.Issue_date + Subscription.Duration AS Return_Date
+SELECT Books.*
 INTO books_return_control
 FROM Books
-JOIN Subscription
-ON Books.Book_code = Subscription.Book_code
-WHERE Subscription.Return_mark = FALSE
-AND Subscription.Issue_date + Subscription.Duration < CURRENT_DATE
-ORDER BY Books.Book_code;
+WHERE EXISTS (
+    SELECT 1
+    FROM Subscription
+    WHERE Subscription.Book_code = Books.Book_code
+    AND Subscription.Return_mark = FALSE
+    AND Subscription.Issue_date + Subscription.Duration < CURRENT_DATE
+);
 
 
 -- 4. Добавить в созданную таблицу книги, у которых до конца срока возврата остался ещё месяц
 
 INSERT INTO books_return_control
-SELECT DISTINCT ON (Books.Book_code)
-    Books.*,
-    Subscription.Issue_date,
-    Subscription.Duration,
-    Subscription.Issue_date + Subscription.Duration AS Return_Date
+SELECT Books.*
 FROM Books
-JOIN Subscription
-ON Books.Book_code = Subscription.Book_code
-WHERE Subscription.Return_mark = FALSE
-AND Subscription.Issue_date + Subscription.Duration
-    BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+WHERE EXISTS (
+    SELECT 1
+    FROM Subscription
+    WHERE Subscription.Book_code = Books.Book_code
+    AND Subscription.Return_mark = FALSE
+    AND Subscription.Issue_date + Subscription.Duration
+        BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+)
 AND NOT EXISTS (
     SELECT 1
     FROM books_return_control
     WHERE books_return_control.Book_code = Books.Book_code
-)
-ORDER BY Books.Book_code;
+);
 
 
 -- 5. В созданной таблице для всех книг, выпущенных до 1990 года, продлить срок возврата на 2 года
 
 UPDATE books_return_control
-SET Return_Date = (Return_Date + INTERVAL '2 years')::DATE
+SET Publication_year = Publication_year + 2
 WHERE Publication_year < 1990;
 
 
